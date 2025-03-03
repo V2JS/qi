@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多棋类游戏</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.2.47/vue.global.min.js"></script>
+    <link href="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/bootstrap/5.1.3/css/bootstrap.css" type="text/css"
+        rel="stylesheet" />
+    <style>
+        /* 添加canvas样式 */
+        canvas {
+            display: block;
+            /* 修复居中问题 */
+            max-width: 100%;
+        }
+    
+        </style>
+</head>
+
+<body>
+    <div id="app" class="min-h-screen bg-gray-100 p-8">
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold mb-8 text-center">多棋类游戏</h1>
+
+            <!-- 游戏选择 -->
+            <div class="text-center mb-4">
+                <button class="btn btn-primary mx-2" @click="switchGame('gobang')">五子棋</button>
+                <button class="btn btn-primary mx-2" @click="switchGame('xiangqi')">象棋</button>
+            </div>
+
+            <!-- 游戏区域 -->
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <canvas ref="boardCanvas" class="mx-auto"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const { createApp } = Vue;
+
+    const BoardPresets = {
+        gobang: {
+            draw(ctx, size) {
+                // 绘制五子棋15x15网格
+                ctx.strokeStyle = '#8B4513';
+                ctx.lineWidth = 1;
+                const step = size / 14;
+
+                for (let i = 0; i < 15; i++) {
+                    // 水平线
+                    ctx.beginPath();
+                    ctx.moveTo(0, i * step);
+                    ctx.lineTo(size, i * step);
+                    ctx.stroke();
+                    // 垂直线
+                    ctx.beginPath();
+                    ctx.moveTo(i * step, 0);
+                    ctx.lineTo(i * step, size);
+                    ctx.stroke();
+                }
+            }
+        },
+        xiangqi: {
+            draw(ctx, size) {
+                // 调整棋盘比例
+                const ratio = 0.9; // 棋盘区域占比
+                const offset = size * (1 - ratio) / 2;
+                const boardSize = size * ratio;
+
+                // 设置棋盘样式
+                ctx.fillStyle = '#f3d9a6';
+                ctx.fillRect(offset, offset, boardSize, boardSize);
+
+                // 绘制主网格（9x10）
+                ctx.strokeStyle = '#4a3520';
+                ctx.lineWidth = 2;
+
+                // 修正竖线绘制（跳过楚河区域）
+                 // 先定义 rowStep 和 colStep
+                const rowStep = boardSize / 9;  // 提前声明
+                const colStep = boardSize / 8;
+                for (let i = 0; i <= 8; i++) {
+                    ctx.beginPath();
+                    // 上半区竖线
+                    ctx.moveTo(offset + i * colStep, offset);
+                    ctx.lineTo(offset + i * colStep, offset + 4 * rowStep); // 这里使用 rowStep
+                    // 下半区竖线
+                    ctx.moveTo(offset + i * colStep, offset + 5 * rowStep);
+                    ctx.lineTo(offset + i * colStep, offset + boardSize);
+                    ctx.stroke();
+                }
+
+                // 绘制水平线（9条间距）
+                for (let i = 0; i <= 9; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(offset, offset + i * rowStep);  // 这里使用已定义的 rowStep
+                    ctx.lineTo(offset + boardSize, offset + i * rowStep);
+                    ctx.stroke();
+                }
+
+                // 绘制楚河汉界
+                ctx.fillStyle = '#2c7be5';
+                ctx.font = `${boardSize / 25}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText('楚 河 汉 界', size / 2, offset + 4.5 * rowStep + 10);
+
+                 // 修正九宫格对角线（底部和顶部各一个）
+                const drawPalace = (baseY) => {
+                    ctx.beginPath();
+                    // 左上到右下
+                    ctx.moveTo(offset + 3 * colStep, baseY);
+                    ctx.lineTo(offset + 5 * colStep, baseY + 2 * rowStep);
+                    // 右上到左下
+                    ctx.moveTo(offset + 5 * colStep, baseY);
+                    ctx.lineTo(offset + 3 * colStep, baseY + 2 * rowStep);
+                    ctx.stroke();
+                };
+                drawPalace(offset); // 顶部九宫格
+                drawPalace(offset + 7 * rowStep); // 底部九宫格
+
+                // 绘制炮位和兵位
+                const drawMark = (x, y) => {
+                    ctx.beginPath();
+                    ctx.arc(x, y, boardSize / 80, 0, Math.PI * 2);
+                    ctx.fill();
+                };
+                ctx.fillStyle = '#4a3520';
+                // 修正炮位和兵位坐标
+                [[1, 2], [7, 2], [1, 7], [7, 7]].forEach(([x, y]) => { // 炮位
+                    drawMark(offset + x * colStep, offset + y * rowStep);
+                });
+                for (let x = 0; x <= 8; x += 2) { // 兵位
+                    drawMark(offset + x * colStep, offset + 3 * rowStep);
+                    drawMark(offset + x * colStep, offset + 6 * rowStep);
+                }
+            }
+        }
+    };
+
+    createApp({
+        data() {
+            return { currentGame: 'gobang' }
+        },
+        methods: {
+            switchGame(game) {
+                this.currentGame = game;
+                this.$nextTick(() => this.drawBoard());
+            },
+            drawBoard() {
+                const canvas = this.$refs.boardCanvas;
+                const size = Math.min(600, window.innerWidth - 100);
+                canvas.width = canvas.height = size;
+
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, size, size);
+
+                // 设置棋盘背景
+                ctx.fillStyle = this.getBoardColor();
+                ctx.fillRect(0, 0, size, size);
+
+                // 调用对应棋盘的绘制方法
+                BoardPresets[this.currentGame].draw(ctx, size);
+            },
+            getBoardColor() {
+                return {
+                    gobang: '#DEB887',
+                    xiangqi: '#f3d9a6',
+                    junqi: '#e6d5b8'
+                }[this.currentGame];
+            }
+        },
+        mounted() {
+            this.drawBoard();
+            window.addEventListener('resize', () => this.drawBoard());
+        }
+    }).mount('#app');
+</script>
+</body>
+
+</html>
